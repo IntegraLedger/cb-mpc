@@ -45,6 +45,32 @@ cmem_t mpc_ecdsa2p_key_get_x_share(mpc_ecdsa2pc_key_ref* key);
 // A negative value indicates an error.
 int mpc_ecdsa2p_key_get_curve_code(mpc_ecdsa2pc_key_ref* key);
 
+// Serialize key to bytes. Caller must free *out_data with free().
+// Returns 0 on success, negative on error.
+int mpc_ecdsa2p_key_serialize(
+    mpc_ecdsa2pc_key_ref* key,
+    uint8_t** out_data,
+    size_t* out_len
+);
+
+// Deserialize key from bytes. Caller must free returned key with free_mpc_ecdsa2p_key.
+// Returns 0 on success, negative on error.
+int mpc_ecdsa2p_key_deserialize(
+    const uint8_t* data,
+    size_t len,
+    mpc_ecdsa2pc_key_ref* out_key
+);
+
+// Derive a child key by adding tweak to x_share.
+// tweak must be 32 bytes. Caller must free derived_key with free_mpc_ecdsa2p_key.
+// Returns 0 on success, negative on error.
+int mpc_ecdsa2p_key_derive(
+    mpc_ecdsa2pc_key_ref* base_key,
+    const uint8_t* tweak,
+    size_t tweak_len,
+    mpc_ecdsa2pc_key_ref* derived_key
+);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif

@@ -3,6 +3,7 @@
 #include <memory>
 
 #include <cbmpc/core/buf.h>
+#include <cbmpc/core/convert.h>
 #include <cbmpc/crypto/base.h>
 #include <cbmpc/protocol/ecdsa_2p.h>
 #include <cbmpc/protocol/mpc_job_session.h>
@@ -109,4 +110,108 @@ int mpc_ecdsa2p_key_get_curve_code(mpc_ecdsa2pc_key_ref* key) {
   }
   ecdsa2pc::key_t* k = static_cast<ecdsa2pc::key_t*>(key->opaque);
   return k->curve.get_openssl_code();
+}
+
+// ============ Serialization =========================
+
+int mpc_ecdsa2p_key_serialize(
+    mpc_ecdsa2pc_key_ref* key,
+    uint8_t** out_data,
+    size_t* out_len
+) {
+  if (key == NULL || key->opaque == NULL || out_data == NULL || out_len == NULL) {
+    return -1;
+  }
+
+  try {
+    ecdsa2pc::key_t* k = static_cast<ecdsa2pc::key_t*>(key->opaque);
+
+    // Calculate size first
+    converter_t sizer(true);
+    k->convert(sizer);
+    int size = sizer.get_size();
+
+    // Allocate buffer
+    uint8_t* buffer = static_cast<uint8_t*>(malloc(size));
+    if (buffer == NULL) {
+      return -2;
+    }
+
+    // Serialize
+    converter_t writer(buffer);
+    k->convert(writer);
+
+    if (writer.is_error()) {
+      free(buffer);
+      return -3;
+    }
+
+    *out_data = buffer;
+    *out_len = static_cast<size_t>(size);
+    return 0;
+  } catch (...) {
+    return -4;
+  }
+}
+
+int mpc_ecdsa2p_key_deserialize(
+    const uint8_t* data,
+    size_t len,
+    mpc_ecdsa2pc_key_ref* out_key
+) {
+  if (data == NULL || len == 0 || out_key == NULL) {
+    return -1;
+  }
+
+  try {
+    ecdsa2pc::key_t* k = new ecdsa2pc::key_t();
+
+    mem_t mem(const_cast<uint8_t*>(data), static_cast<int>(len));
+    converter_t reader(mem);
+    k->convert(reader);
+
+    if (reader.is_error()) {
+      delete k;
+      return -2;
+    }
+
+    out_key->opaque = k;
+    return 0;
+  } catch (...) {
+    return -3;
+  }
+}
+
+// ============ Derivation =========================
+
+int mpc_ecdsa2p_key_derive(
+    mpc_ecdsa2pc_key_ref* base_key,
+    const uint8_t* tweak,
+    size_t tweak_len,
+    mpc_ecdsa2pc_key_ref* derived_key
+) {
+  if (base_key == NULL || base_key->opaque == NULL || tweak == NULL || derived_key == NULL) {
+    return -1;
+  }
+  if (tweak_len != 32) {
+    return -2;
+  }
+
+  try {
+    ecdsa2pc::key_t* base = static_cast<ecdsa2pc::key_t*>(base_key->opaque);
+    ecdsa2pc::key_t* derived = new ecdsa2pc::key_t();
+
+    mem_t tweak_mem(const_cast<uint8_t*>(tweak), 32);
+    error_t err = ecdsa2pc::derive_child_key(*base, tweak_mem, *derived);
+
+    if (err) {
+      delete derived;
+      return -3;
+    }
+
+    derived_key->opaque = derived;
+    return 0;
+  } catch (...) {
+    return -4;
+  }
 }

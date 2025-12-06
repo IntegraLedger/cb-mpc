@@ -8,6 +8,7 @@ import "C"
 import (
 	"fmt"
 	"runtime"
+	"unsafe"
 )
 
 type Mpc_ecdsa2pc_key_ref C.mpc_ecdsa2pc_key_ref
@@ -85,4 +86,65 @@ func KeyCurveCode(key Mpc_ecdsa2pc_key_ref) (int, error) {
 		return 0, fmt.Errorf("failed to get curve code from key")
 	}
 	return code, nil
+}
+
+// MarshalBinary serializes the key share to bytes.
+// The returned bytes can be stored and later deserialized with UnmarshalECDSA2PCKey.
+func (k Mpc_ecdsa2pc_key_ref) MarshalBinary() ([]byte, error) {
+	var dataPtr *C.uint8_t
+	var dataLen C.size_t
+
+	cErr := C.mpc_ecdsa2p_key_serialize(
+		(*C.mpc_ecdsa2pc_key_ref)(&k),
+		&dataPtr,
+		&dataLen,
+	)
+	if cErr != 0 {
+		return nil, fmt.Errorf("key serialization failed: %d", cErr)
+	}
+
+	// Copy to Go-managed memory and free C memory
+	result := C.GoBytes(unsafe.Pointer(dataPtr), C.int(dataLen))
+	C.free(unsafe.Pointer(dataPtr))
+
+	return result, nil
+}
+
+// UnmarshalECDSA2PCKey deserializes a key share from bytes.
+// The caller is responsible for calling Free() on the returned key when done.
+func UnmarshalECDSA2PCKey(data []byte) (Mpc_ecdsa2pc_key_ref, error) {
+	if len(data) == 0 {
+		return Mpc_ecdsa2pc_key_ref{}, fmt.Errorf("empty data")
+	}
+
+	var key Mpc_ecdsa2pc_key_ref
+	cErr := C.mpc_ecdsa2p_key_deserialize(
+		(*C.uint8_t)(&data[0]),
+		C.size_t(len(data)),
+		(*C.mpc_ecdsa2pc_key_ref)(&key),
+	)
+	if cErr != 0 {
+		return Mpc_ecdsa2pc_key_ref{}, fmt.Errorf("key deserialization failed: %d", cErr)
+	}
+
+	return key, nil
+}
+
+// DeriveChild creates a child key by adding tweak to x_share.
+// For asymmetric derivation: child_x0 = x0 + tweak, child_Q = Q + tweak*G
+// The caller is responsible for calling Free() on the returned key when done.
+func (k Mpc_ecdsa2pc_key_ref) DeriveChild(tweak [32]byte) (Mpc_ecdsa2pc_key_ref, error) {
+	var derived Mpc_ecdsa2pc_key_ref
+
+	cErr := C.mpc_ecdsa2p_key_derive(
+		(*C.mpc_ecdsa2pc_key_ref)(&k),
+		(*C.uint8_t)(&tweak[0]),
+		32,
+		(*C.mpc_ecdsa2pc_key_ref)(&derived),
+	)
+	if cErr != 0 {
+		return Mpc_ecdsa2pc_key_ref{}, fmt.Errorf("key derivation failed: %d", cErr)
+	}
+
+	return derived, nil
 }

@@ -2,6 +2,7 @@
 
 #include <stdint.h>
 
+#include <cbmpc/core/convert.h>
 #include <cbmpc/crypto/base.h>
 #include <cbmpc/protocol/mpc_job.h>
 #include <cbmpc/zk/zk_ec.h>
@@ -16,7 +17,27 @@ struct key_t {
   bn_t x_share;
   bn_t c_key;
   crypto::paillier_t paillier;
+
+  // Serialization support
+  void convert(coinbase::converter_t& converter) {
+    int32_t role_int = static_cast<int32_t>(role);
+    converter.convert(role_int);
+    if (!converter.is_write()) {
+      role = static_cast<party_t>(role_int);
+    }
+    converter.convert(curve);
+    converter.convert(Q);
+    converter.convert(x_share);
+    converter.convert(c_key);
+    converter.convert(paillier);
+  }
 };
+
+/**
+ * Derive a child key by adding a scalar tweak to the server's x_share.
+ * For asymmetric derivation: child_x0 = x0 + tweak, child_Q = Q + tweak*G
+ */
+error_t derive_child_key(const key_t& base_key, mem_t tweak, key_t& child_key);
 
 /**
  * @specs:

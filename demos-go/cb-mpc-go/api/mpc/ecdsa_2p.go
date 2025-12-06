@@ -201,3 +201,35 @@ func ECDSA2PCRefresh(job2p *Job2P, req *ECDSA2PCRefreshRequest) (*ECDSA2PCRefres
 
 	return &ECDSA2PCRefreshResponse{NewKeyShare: ECDSA2PCKey(newKeyRef)}, nil
 }
+
+// MarshalBinary serializes the key share to bytes for persistent storage.
+// The returned bytes should be encrypted before storage (e.g., with KMS).
+func (k ECDSA2PCKey) MarshalBinary() ([]byte, error) {
+	return k.cgobindingRef().MarshalBinary()
+}
+
+// UnmarshalECDSA2PCKey deserializes a key share from bytes.
+// The caller is responsible for calling Free() when done with the key.
+func UnmarshalECDSA2PCKey(data []byte) (ECDSA2PCKey, error) {
+	ref, err := cgobinding.UnmarshalECDSA2PCKey(data)
+	if err != nil {
+		return ECDSA2PCKey{}, err
+	}
+	return ECDSA2PCKey(ref), nil
+}
+
+// DeriveChild creates a derived key share by adding tweak to x_share.
+// For asymmetric derivation where only the server's share changes:
+//   - child_x0 = x0 + tweak (mod n)
+//   - child_Q = Q + tweak*G
+//
+// The user's share remains unchanged, so signing with this derived key
+// will produce signatures that verify against the derived public key.
+// The caller is responsible for calling Free() when done with the derived key.
+func (k ECDSA2PCKey) DeriveChild(tweak [32]byte) (ECDSA2PCKey, error) {
+	derived, err := k.cgobindingRef().DeriveChild(tweak)
+	if err != nil {
+		return ECDSA2PCKey{}, err
+	}
+	return ECDSA2PCKey(derived), nil
+}

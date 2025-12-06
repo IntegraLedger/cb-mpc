@@ -555,4 +555,38 @@ error_t zk_ecdsa_sign_2pc_integer_commit_t::verify(const ecurve_t curve, const c
   return SUCCESS;
 }
 
+error_t derive_child_key(const key_t& base_key, mem_t tweak, key_t& child_key) {
+  if (tweak.size != 32) {
+    return coinbase::error(E_BADARG, "tweak must be 32 bytes");
+  }
+
+  // Only server (p1) applies the tweak in asymmetric derivation
+  if (base_key.role != party_t::p1) {
+    return coinbase::error(E_BADARG, "derivation only supported for server (p1)");
+  }
+
+  ecurve_t curve = base_key.curve;
+  const mod_t& n = curve.order();
+
+  // Parse tweak as big integer and reduce mod n
+  bn_t tweak_bn;
+  tweak_bn.from_bin(tweak);
+  tweak_bn = n.mod(tweak_bn);
+
+  // child_x0 = x0 + tweak (mod n)
+  child_key.x_share = n.add(base_key.x_share, tweak_bn);
+
+  // child_Q = Q + tweak * G
+  ecc_point_t tweak_point = curve.mul_to_generator(tweak_bn);
+  child_key.Q = base_key.Q + tweak_point;
+
+  // Copy unchanged fields
+  child_key.role = base_key.role;
+  child_key.curve = base_key.curve;
+  child_key.c_key = base_key.c_key;        // User's encrypted share unchanged
+  child_key.paillier = base_key.paillier;  // Same Paillier key
+
+  return SUCCESS;
+}
+
 }  // namespace coinbase::mpc::ecdsa2pc
