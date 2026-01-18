@@ -4,6 +4,11 @@
 #include <cbmpc/core/macros.h>
 #include <cbmpc/core/strext.h>
 
+// WASM/Emscripten doesn't support native stack unwinding
+#ifdef __EMSCRIPTEN__
+#define CBMPC_NO_NATIVE_STACK_TRACE
+#endif
+
 #if !defined(_DEBUG)
 // #define JSON_ERR
 #endif
@@ -70,6 +75,7 @@ error_t error(error_t rv, const std::string& text) { return error(rv, text, true
 
 error_t error(error_t rv) { return error(rv, ""); }
 
+#ifndef CBMPC_NO_NATIVE_STACK_TRACE
 struct BacktraceState {
   void** current;
   void** end;
@@ -86,7 +92,9 @@ static _Unwind_Reason_Code unwindCallback(struct _Unwind_Context* context, void*
   }
   return _URC_NO_REASON;
 }
+#endif  // CBMPC_NO_NATIVE_STACK_TRACE
 
+#ifndef CBMPC_NO_NATIVE_STACK_TRACE
 static void str_replace_with_smaller(char* string, const char* substr, const char* replacement) {
   int len = int(strlen(string));
   int substr_len = int(strlen(substr));
@@ -225,8 +233,13 @@ static std::string color_func_name(const char* symbol) {
 
   return symbol_str;
 }
+#endif  // CBMPC_NO_NATIVE_STACK_TRACE
 
 void print_stack_trace() {
+#ifdef CBMPC_NO_NATIVE_STACK_TRACE
+  // Stack trace not available in WASM
+  return;
+#else
 #ifdef __linux__
   symbols.load();
 #endif
@@ -277,6 +290,7 @@ void print_stack_trace() {
     ss.end_line();
     out_error(ss.get());
   }
+#endif  // CBMPC_NO_NATIVE_STACK_TRACE
 }
 
 void assert_failed(const char* msg, const char* file, int line) {

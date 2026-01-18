@@ -97,6 +97,11 @@ add_library(
 
 link_openssl(cbmpc)
 
+# WASM bindings (only built when targeting Emscripten)
+if(IS_WASM)
+  add_subdirectory(src/cbmpc/wasm)
+endif()
+
 # ------------- Tests ---------------------------
 
 if(NOT IS_MACOS)

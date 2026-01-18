@@ -23,3 +23,4 @@ a.out
 docsgen/
 node_modules/
 cmake_test_discovery_*.json
+build-wasm/
