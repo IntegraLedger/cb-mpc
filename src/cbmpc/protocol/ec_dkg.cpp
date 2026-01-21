@@ -38,9 +38,71 @@ void dkg_2p_t::step2_p2_to_p1(const bn_t& x2) {
 
 error_t dkg_2p_t::step3_p1_to_p2(ecc_point_t& Q) {
   error_t rv = UNINITIALIZED_ERROR;
+
+  // Debug: log values received for verification
+  printf("[SERVER DEBUG] step3_p1_to_p2 - verifying P2's msg2\n");
+  printf("[SERVER DEBUG]   sid1 size: %d bytes, first 16 bytes: ", sid1.size());
+  for (int i = 0; i < 16 && i < sid1.size(); i++) printf("%02x", sid1.data()[i]);
+  printf("\n");
+  printf("[SERVER DEBUG]   sid2 size: %d bytes, first 16 bytes: ", sid2.size());
+  for (int i = 0; i < 16 && i < sid2.size(); i++) printf("%02x", sid2.data()[i]);
+  printf("\n");
+
   if (rv = curve.check(Q2)) return coinbase::error(E_CRYPTO, "dkg_2p_t::p1_verify: check Q2 failed");
   sid = crypto::sha256_t::hash(sid1, sid2);
-  if (rv = pi_2.verify(Q2, sid, 2)) return rv;
+
+  printf("[SERVER DEBUG]   combined sid first 16 bytes: ");
+  for (int i = 0; i < 16 && i < sid.size(); i++) printf("%02x", sid.data()[i]);
+  printf("\n");
+
+  // Log Q2 point
+  buf_t Q2_compressed = Q2.to_compressed_bin();
+  printf("[SERVER DEBUG]   Q2 compressed (%d bytes): ", Q2_compressed.size());
+  for (int i = 0; i < Q2_compressed.size(); i++) printf("%02x", Q2_compressed.data()[i]);
+  printf("\n");
+
+  // Log pi_2 proof structure
+  printf("[SERVER DEBUG]   pi_2.params.rho: %d, pi_2.params.b: %d, pi_2.params.t: %d\n",
+         pi_2.params.rho, pi_2.params.b, pi_2.params.t);
+  printf("[SERVER DEBUG]   pi_2.A.size(): %zu, pi_2.e.size(): %zu, pi_2.z.size(): %zu\n",
+         pi_2.A.size(), pi_2.e.size(), pi_2.z.size());
+  if (pi_2.e.size() >= 3) {
+    printf("[SERVER DEBUG]   pi_2.e[0,1,2]: %d, %d, %d\n", pi_2.e[0], pi_2.e[1], pi_2.e[2]);
+    // Log ALL e values to compare with WASM
+    printf("[SERVER DEBUG]   ALL e values: ");
+    for (size_t i = 0; i < pi_2.e.size(); i++) {
+      printf("%d ", pi_2.e[i]);
+    }
+    printf("\n");
+  }
+
+  // Serialize pi_2 back to raw bytes to see what we actually have
+  buf_t pi2_reser = ser(pi_2);
+  printf("[SERVER DEBUG]   pi_2 re-serialized (%d bytes), first 64 bytes:\n[SERVER DEBUG]     ", pi2_reser.size());
+  for (int i = 0; i < 64 && i < pi2_reser.size(); i++) {
+    printf("%02x", pi2_reser.data()[i]);
+    if ((i + 1) % 32 == 0) printf("\n[SERVER DEBUG]     ");
+  }
+  printf("\n");
+
+  // Calculate where e vector starts in re-serialization
+  buf_t A_vec_only = ser(pi_2.A);
+  int e_offset = 12 + A_vec_only.size();  // params(12) + A vector
+  printf("[SERVER DEBUG]   A vector serialized size: %d bytes, e starts at offset %d\n", A_vec_only.size(), e_offset);
+  if (e_offset < pi2_reser.size()) {
+    printf("[SERVER DEBUG]   bytes at e offset: ");
+    for (int i = e_offset; i < e_offset + 20 && i < pi2_reser.size(); i++) {
+      printf("%02x ", pi2_reser.data()[i]);
+    }
+    printf("\n");
+  }
+
+  if (rv = pi_2.verify(Q2, sid, 2)) {
+    printf("[SERVER DEBUG]   pi_2.verify FAILED with error: %d\n", rv);
+    return rv;
+  }
+  printf("[SERVER DEBUG]   pi_2.verify SUCCEEDED\n");
+
   pi_1.prove(Q1, x1, sid, 1);
   Q = Q1 + Q2;
   return SUCCESS;

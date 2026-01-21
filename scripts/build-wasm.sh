@@ -53,7 +53,8 @@ echo ""
 echo "Linking WASM module..."
 
 # Exported functions for JavaScript
-EXPORTED_FUNCTIONS='["_wasm_alloc", "_wasm_free", "_wasm_init", "_wasm_get_last_error", "_wasm_key_serialize", "_wasm_key_deserialize", "_wasm_key_free", "_wasm_key_get_public_key", "_wasm_key_get_address", "_wasm_key_derive", "_wasm_keygen_p1_start", "_wasm_keygen_p1_process", "_wasm_keygen_p1_get_key", "_wasm_keygen_session_free", "_wasm_sign_p1_start", "_wasm_sign_p1_process", "_wasm_sign_p1_get_signature", "_wasm_sign_session_free", "_malloc", "_free"]'
+# P1 functions (client-first protocol) + P2 functions (server-first protocol)
+EXPORTED_FUNCTIONS='["_wasm_alloc", "_wasm_free", "_wasm_init", "_wasm_seed_random", "_wasm_get_last_error", "_wasm_get_secp256k1_curve_code", "_wasm_test_deterministic_proof", "_wasm_key_serialize", "_wasm_key_deserialize", "_wasm_key_free", "_wasm_key_get_public_key", "_wasm_key_get_uncompressed_public_key", "_wasm_key_get_address", "_wasm_key_derive", "_wasm_key_get_curve_code", "_wasm_key_get_role", "_wasm_keygen_p1_start", "_wasm_keygen_p1_process", "_wasm_keygen_p1_get_key", "_wasm_keygen_session_free", "_wasm_keygen_p2_start", "_wasm_keygen_p2_process", "_wasm_keygen_p2_get_key", "_wasm_keygen_p2_session_free", "_wasm_sign_p1_start", "_wasm_sign_p1_process", "_wasm_sign_p1_get_signature", "_wasm_sign_session_free", "_wasm_sign_p2_start", "_wasm_sign_p2_process", "_wasm_sign_p2_session_free", "_malloc", "_free"]'
 
 # Link with Emscripten to produce .wasm + .js
 emcc \
@@ -67,7 +68,8 @@ emcc \
   -s EXPORTED_FUNCTIONS="$EXPORTED_FUNCTIONS" \
   -s EXPORTED_RUNTIME_METHODS='["ccall", "cwrap", "getValue", "setValue", "UTF8ToString", "stringToUTF8", "lengthBytesUTF8"]' \
   -s NO_EXIT_RUNTIME=1 \
-  -s FILESYSTEM=0 \
+  -s FILESYSTEM=1 \
+  -s FORCE_FILESYSTEM=1 \
   -s ENVIRONMENT='web,worker' \
   -s DISABLE_EXCEPTION_CATCHING=0 \
   "$BUILD_DIR/src/cbmpc/wasm/CMakeFiles/cbmpc_wasm.dir/wasm_ecdsa2p.cpp.o" \

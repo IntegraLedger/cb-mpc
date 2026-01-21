@@ -368,11 +368,15 @@ void mod_t::init(const bn_t& m) {
   cb_assert(res && "BN_MONT_CTX_set failed");
   this->m = m;
 
-  // barrett
+  // Barrett coefficients - only compute for 64-bit platforms where the
+  // constant-time Barrett reduction is used. On 32-bit/WASM, we use
+  // OpenSSL's BN_div instead.
+#if !defined(__EMSCRIPTEN__) && !defined(THIRTY_TWO_BIT) && (BN_BYTES == 8)
   int k = (m.get_bits_count() + 63) / 64;
   bn_t b_pow_2k = bn_t(1).mul_2_pow(2 * k * 64);    // b^{2k}
   mu = b_pow_2k / m;                                // µ = ⌊b^{2k} / m⌋
   b_pow_k_plus1 = bn_t(1).mul_2_pow((k + 1) * 64);  // b^{k+1}
+#endif
 }
 
 static void barrett_partial_mul(int ResultLength, BN_ULONG r[], int M, const BN_ULONG u[], int N, const BN_ULONG v[]) {
@@ -410,6 +414,18 @@ void mod_t::_mod(bn_t& r, const bn_t& x) const {
 }
 
 void mod_t::_mod(BIGNUM& r, const BIGNUM& x) const {
+  // Use vartime path for WASM/32-bit platforms because the constant-time
+  // Barrett reduction below assumes 64-bit BN_ULONG words.
+  // The code uses hardcoded 64-bit word arithmetic that doesn't work with
+  // 32-bit BN_ULONG (e.g., __int128 operations, 64-bit shifts).
+#if defined(__EMSCRIPTEN__) || defined(THIRTY_TWO_BIT) || (BN_BYTES != 8)
+  {
+    int res = BN_div(nullptr, &r, &x, m, bn_t::thread_local_storage_bn_ctx());
+    cb_assert(res);
+    return;
+  }
+#endif
+
   if (vartime_scope) {
     int res = BN_div(nullptr, &r, &x, m, bn_t::thread_local_storage_bn_ctx());
     cb_assert(res);

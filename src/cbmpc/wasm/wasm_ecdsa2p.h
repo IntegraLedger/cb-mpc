@@ -237,6 +237,13 @@ const char* wasm_get_last_error(void);
  */
 int wasm_init(void);
 
+/**
+ * Run deterministic proof test for debugging.
+ * Uses fixed inputs to compare WASM vs native behavior.
+ * @return 0 on success (proof verified), non-zero on failure
+ */
+int wasm_test_deterministic_proof(void);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif
