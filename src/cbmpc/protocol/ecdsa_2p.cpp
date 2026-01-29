@@ -560,31 +560,40 @@ error_t derive_child_key(const key_t& base_key, mem_t tweak, key_t& child_key) {
     return coinbase::error(E_BADARG, "tweak must be 32 bytes");
   }
 
-  // Only server (p1) applies the tweak in asymmetric derivation
-  if (base_key.role != party_t::p1) {
-    return coinbase::error(E_BADARG, "derivation only supported for server (p1)");
-  }
-
   ecurve_t curve = base_key.curve;
   const mod_t& n = curve.order();
 
   // Parse tweak as big integer and reduce mod n
-  bn_t tweak_bn;
-  tweak_bn.from_bin(tweak);
+  bn_t tweak_bn = bn_t::from_bin(tweak);
   tweak_bn = n.mod(tweak_bn);
 
-  // child_x0 = x0 + tweak (mod n)
-  child_key.x_share = n.add(base_key.x_share, tweak_bn);
+  // Asymmetric HD derivation following cb-mpc's hd_keyset_ecdsa_2p pattern:
+  // - The tweak is added to P2's (client's) x_share only
+  // - P1's (server's) x_share stays unchanged
+  // - c_key (Paillier encryption of P1's x_share) stays unchanged
+  // - Q is updated: child_Q = Q + tweak * G
+  //
+  // This works because the signing protocol computes s involving (x1 + x2),
+  // and c_key encrypts x1 which hasn't changed. P2 applies the tweak
+  // to its own share, so the combined secret becomes x1 + (x2 + tweak).
 
-  // child_Q = Q + tweak * G
+  if (base_key.role == party_t::p1) {
+    // Server: x_share unchanged, Q updated
+    child_key.x_share = base_key.x_share;
+  } else {
+    // Client: x_share gets tweak, Q updated
+    child_key.x_share = n.add(base_key.x_share, tweak_bn);
+  }
+
+  // child_Q = Q + tweak * G (both parties)
   ecc_point_t tweak_point = curve.mul_to_generator(tweak_bn);
   child_key.Q = base_key.Q + tweak_point;
 
   // Copy unchanged fields
   child_key.role = base_key.role;
   child_key.curve = base_key.curve;
-  child_key.c_key = base_key.c_key;        // User's encrypted share unchanged
-  child_key.paillier = base_key.paillier;  // Same Paillier key
+  child_key.c_key = base_key.c_key;        // Encrypts P1's x_share (unchanged)
+  child_key.paillier = base_key.paillier;
 
   return SUCCESS;
 }
