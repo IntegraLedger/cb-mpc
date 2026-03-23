@@ -1,0 +1,23 @@
+# Build cb-mpc WASM artifacts using Emscripten
+FROM emscripten/emsdk:3.1.51
+
+RUN apt-get update && apt-get install -y cmake perl && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+
+# Copy source
+COPY . /build/cb-mpc
+
+# Build OpenSSL for WASM using the existing script
+# (uses OpenSSL 3.2.0 with proper WASM-compatible flags)
+ENV CBMPC_OPENSSL_WASM_ROOT=/tmp/openssl-wasm
+RUN cd /build/cb-mpc && bash scripts/openssl/build-static-openssl-wasm.sh
+
+# Patch build-wasm.sh to include Node.js environment support (for testing)
+RUN cd /build/cb-mpc && \
+    sed -i "s/ENVIRONMENT='web,worker'/ENVIRONMENT='web,worker,node'/" scripts/build-wasm.sh
+
+# Build cb-mpc WASM
+RUN cd /build/cb-mpc && bash scripts/build-wasm.sh
+
+# Output artifacts at /build/cb-mpc/dist-wasm/

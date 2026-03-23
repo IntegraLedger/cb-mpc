@@ -167,8 +167,8 @@ int mpc_ecdsa2p_key_deserialize(
   try {
     ecdsa2pc::key_t* k = new ecdsa2pc::key_t();
 
-    mem_t mem(const_cast<uint8_t*>(data), static_cast<int>(len));
-    converter_t reader(mem);
+    cmem_t cm{const_cast<uint8_t*>(data), static_cast<int>(len)};
+    converter_t reader(coinbase::ffi::view(cm));
     k->convert(reader);
 
     if (reader.is_error()) {
@@ -202,8 +202,8 @@ int mpc_ecdsa2p_key_derive(
     ecdsa2pc::key_t* base = static_cast<ecdsa2pc::key_t*>(base_key->opaque);
     ecdsa2pc::key_t* derived = new ecdsa2pc::key_t();
 
-    mem_t tweak_mem(const_cast<uint8_t*>(tweak), 32);
-    error_t err = ecdsa2pc::derive_child_key(*base, tweak_mem, *derived);
+    cmem_t tweak_cm{const_cast<uint8_t*>(tweak), 32};
+    error_t err = ecdsa2pc::derive_child_key(*base, coinbase::ffi::view(tweak_cm), *derived);
 
     if (err) {
       delete derived;
