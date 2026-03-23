@@ -91,24 +91,24 @@ TEST(ECDKG, ReconstructPubAdditiveShares) {
   ASSERT_TRUE(strext::from_hex(q,
                                "043ba974482f15ea45d22ad2022c5168e36ff3e320ef49c36b65388090c2e7bf50fb79a1648f194fdd38733"
                                "a6503a13e5f6be7bf7979ebbf0f33a7849f69886311"));
-  ASSERT_EQ(ks.Q.from_bin(curve, mem_t(q.to_cmem())), 0);
+  ASSERT_EQ(ks.Q.from_bin(curve, mem_t(q.data(), q.size())), 0);
 
   ASSERT_TRUE(strext::from_hex(q,
                                "046df7e34ba10dd371efb4b3c508918115d258a9e05c69869e6bd33804cf1450d1e5a64c161b97063a3d662"
                                "29169d79db391a9f8bfaba0661c9f8aab2f2882409d"));
-  ASSERT_EQ(ks.Qis["p0"].from_bin(curve, mem_t(q.to_cmem())), 0);
+  ASSERT_EQ(ks.Qis["p0"].from_bin(curve, mem_t(q.data(), q.size())), 0);
   ASSERT_TRUE(strext::from_hex(q,
                                "049a17a7674840e077daf26c7a0968eac8b1682b35d2d5dac09be5421b70da590ff9bb515f4bd6e30a5d77c"
                                "87dfeaf9fbf7bf81f7386b5650276afb082d685875a"));
-  ASSERT_EQ(ks.Qis["p1"].from_bin(curve, mem_t(q.to_cmem())), 0);
+  ASSERT_EQ(ks.Qis["p1"].from_bin(curve, mem_t(q.data(), q.size())), 0);
   ASSERT_TRUE(strext::from_hex(q,
                                "048ce1b47d641157ae2ce9636b72f3345e162ea904b8830e96c92a6ec3d5842b8f2955d0ff48d08ef46856e"
                                "f593a71b29be6092e4a5929e606c7eaf75a099394bf"));
-  ASSERT_EQ(ks.Qis["p2"].from_bin(curve, mem_t(q.to_cmem())), 0);
+  ASSERT_EQ(ks.Qis["p2"].from_bin(curve, mem_t(q.data(), q.size())), 0);
   ASSERT_TRUE(strext::from_hex(q,
                                "048ce1b47d641157ae2ce9636b72f3345e162ea904b8830e96c92a6ec3d5842b8f2955d0ff48d08ef46856e"
                                "f593a71b29be6092e4a5929e606c7eaf75a099394bf"));
-  ASSERT_EQ(ks.Qis["p3"].from_bin(curve, mem_t(q.to_cmem())), 0);
+  ASSERT_EQ(ks.Qis["p3"].from_bin(curve, mem_t(q.data(), q.size())), 0);
 
   key_share_mp_t additive_share;
   error_t rv = ks.to_additive_share(ac, quorum, additive_share);
@@ -125,7 +125,7 @@ TEST(ECDKG, ReconstructPubAdditiveShares) {
                                "048ce1b47d641157ae2ce9636b72f3345e162ea904b8830e96c92a6ec3d5842b8f2955d0ff48d08ef46856e"
                                "f593a71b29be6092e4a5929e606c7eaf75a099394bf"));
   ecc_point_t expected_p2;
-  ASSERT_EQ(expected_p2.from_bin(curve, mem_t(expected_bin.to_cmem())), 0);
+  ASSERT_EQ(expected_p2.from_bin(curve, mem_t(expected_bin.data(), expected_bin.size())), 0);
   EXPECT_EQ(additive_share.Qis["p2"], expected_p2);
 }
 
@@ -149,7 +149,7 @@ TEST(ECDKG, ReconstructPubAdditiveShares_ORNode) {
 TEST(ECDKG, ReconstructPubAdditiveShares_Threshold2of3) {
   // THRESHOLD[2](p0, p1, p2) with additive quorum {p0, p2}
   ss::node_t* root_node =
-      new ss::node_t(ss::node_e::THRESHOLD, "th-root", 2,
+      new ss::node_t(ss::node_e::THRESHOLD, "", 2,
                      {new ss::node_t(ss::node_e::LEAF, "p0"), new ss::node_t(ss::node_e::LEAF, "p1"),
                       new ss::node_t(ss::node_e::LEAF, "p2")});
 
@@ -162,7 +162,7 @@ TEST(ECDKG, ReconstructPubAdditiveShares_Threshold2of3) {
 TEST(ECDKG, ReconstructPubAdditiveShares_ThresholdNofN_ANDEquivalent) {
   // THRESHOLD[3](p0, p1, p2) with additive quorum {p0, p1, p2} (equivalent to AND)
   ss::node_t* root_node =
-      new ss::node_t(ss::node_e::THRESHOLD, "th-all", 3,
+      new ss::node_t(ss::node_e::THRESHOLD, "", 3,
                      {new ss::node_t(ss::node_e::LEAF, "p0"), new ss::node_t(ss::node_e::LEAF, "p1"),
                       new ss::node_t(ss::node_e::LEAF, "p2")});
 
@@ -175,7 +175,7 @@ TEST(ECDKG, ReconstructPubAdditiveShares_ThresholdNofN_ANDEquivalent) {
 TEST(ECDKG, ReconstructPubAdditiveShares_Threshold3of4_LargerLeaves) {
   // THRESHOLD[3](p0, p1, p2, p3) with additive quorum {p0, p1, p2}
   ss::node_t* root_node =
-      new ss::node_t(ss::node_e::THRESHOLD, "th-3of4", 3,
+      new ss::node_t(ss::node_e::THRESHOLD, "", 3,
                      {new ss::node_t(ss::node_e::LEAF, "p0"), new ss::node_t(ss::node_e::LEAF, "p1"),
                       new ss::node_t(ss::node_e::LEAF, "p2"), new ss::node_t(ss::node_e::LEAF, "p3")});
 
@@ -183,6 +183,33 @@ TEST(ECDKG, ReconstructPubAdditiveShares_Threshold3of4_LargerLeaves) {
   std::set<int> dkg_quorum_indices = {0, 1, 2};
   std::set<crypto::pname_t> additive_quorum = {"p3", "p1", "p2"};
   RunDkgAndAdditiveShareTest(root_node, pnames, dkg_quorum_indices, additive_quorum);
+}
+
+TEST(ECDKG, ThresholdDkgRejectsInvalidAccessStructureDuplicateLeaves) {
+  dylog_disable_scope_t dylog_disable_scope;
+
+  ecurve_t curve = crypto::curve_secp256k1;
+  const auto& G = curve.generator();
+
+  // Malformed access structure: THRESHOLD[2](p1, p1, p2)
+  // Duplicate leaf names can incorrectly satisfy enough_for_quorum() unless validated.
+  node_t root(node_e::THRESHOLD, "", 2,
+              {new node_t(node_e::LEAF, "p1"), new node_t(node_e::LEAF, "p1"), new node_t(node_e::LEAF, "p2")});
+
+  ss::ac_t ac;
+  ac.G = G;
+  ac.root = &root;
+
+  std::vector<crypto::pname_t> pnames = {"p0", "p1", "p2"};
+  mpc::job_mp_t job(/*index=*/0, pnames, /*tptr=*/nullptr);
+
+  mpc::party_set_t quorum_party_set;
+  quorum_party_set.add(1);  // only p1 in quorum
+
+  buf_t sid = crypto::gen_random(16);
+  key_share_mp_t key;
+  error_t rv = key_share_mp_t::threshold_dkg(job, curve, sid, ac, quorum_party_set, key);
+  EXPECT_EQ(uint32_t(rv), uint32_t(E_BADARG));
 }
 
 }  // namespace

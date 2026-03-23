@@ -285,6 +285,8 @@ error_t key_share_mp_t::refresh(job_mp_t& job, buf_t& sid, const key_share_mp_t&
     // Curve check of R._j[l] is done inside the zk verify function further below
 
     if (h._j != h) return coinbase::error(E_CRYPTO);
+    if (R._j.size() != size_t(n)) return coinbase::error(E_CRYPTO, "ec_dkg: inconsistent batch size (R)");
+    if (pi_r._j.size() != size_t(n)) return coinbase::error(E_CRYPTO, "ec_dkg: inconsistent batch size (pi_r)");
 
     if (rv = com_R.id(sid, job.get_pid(j)).set(rho._j, c._j).open(R._j, pi_r._j)) return rv;
     for (int l = 0; l < n; l++) {
@@ -330,6 +332,10 @@ error_t key_share_mp_t::threshold_dkg_or_refresh(job_mp_t& job, const ecurve_t& 
 
   const auto& G = curve.generator();
   const mod_t& q = curve.order();
+
+  if (rv = ac.validate_tree()) {
+    return coinbase::error(rv, "Invalid access structure");
+  }
 
   int n = job.get_n_parties();
   int quorum_count = 0;

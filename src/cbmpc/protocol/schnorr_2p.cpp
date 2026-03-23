@@ -20,6 +20,7 @@ error_t sign(job_2p_t& job, key_t& key, const mem_t& msg, buf_t& sig, variant_e 
 error_t sign_batch(job_2p_t& job, key_t& key, const std::vector<mem_t>& msgs, std::vector<buf_t>& sigs,
                    variant_e variant) {
   int n_sigs = msgs.size();
+  if (n_sigs <= 0) return coinbase::error(E_BADARG, "schnorr_2p: empty batch");
   sigs.resize(n_sigs);
 
   error_t rv = UNINITIALIZED_ERROR;
@@ -50,6 +51,8 @@ error_t sign_batch(job_2p_t& job, key_t& key, const std::vector<mem_t>& msgs, st
     zk_dl2.prove(R2, k2, sid, 2);
   }
   if (rv = job.p2_to_p1(R2, zk_dl2, sid2)) return rv;
+  if (job.is_p1() && R2.size() != size_t(n_sigs))
+    return coinbase::error(E_CRYPTO, "schnorr_2p: inconsistent batch size (R2)");
 
   if (job.is_p1()) {
     // point checks are covered by the zk proof
@@ -60,6 +63,7 @@ error_t sign_batch(job_2p_t& job, key_t& key, const std::vector<mem_t>& msgs, st
   if (rv = job.p1_to_p2(zk_dl1, R1, com.rand)) return rv;
 
   if (job.is_p2()) {
+    if (R1.size() != size_t(n_sigs)) return coinbase::error(E_CRYPTO, "schnorr_2p: inconsistent batch size (R1)");
     // point checks are covered by the zk proof
     if (rv = com.id(sid1, job.get_pid(party_t::p1)).open(R1)) return rv;
     if (rv = zk_dl1.verify(R1, sid, 1)) return rv;
@@ -102,6 +106,7 @@ error_t sign_batch(job_2p_t& job, key_t& key, const std::vector<mem_t>& msgs, st
   if (rv = job.p2_to_p1(s2)) return rv;
 
   if (job.is_p1()) {
+    if (s2.size() != size_t(n_sigs)) return coinbase::error(E_CRYPTO, "schnorr_2p: inconsistent batch size (s2)");
     for (int i = 0; i < n_sigs; i++) {
       bn_t s, s1;
       MODULO(q) {

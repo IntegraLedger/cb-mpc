@@ -51,7 +51,6 @@ class hash_alg_t {
 class ecc_point_t;
 class ecc_generator_point_t;
 
-inline int get_bin_size(cmem_t mem) { return mem.size; }
 inline int get_bin_size(mem_t mem) { return mem.size; }
 inline int get_bin_size(const buf_t& buf) { return buf.size(); }
 inline int get_bin_size(const buf256_t& v) { return 32; }
@@ -82,10 +81,6 @@ int get_bin_size(const V& v) {
 template <class T>
 T& update_state(T& state, const buf_t& v) {
   return state.update(v.data(), v.size());
-}
-template <class T>
-T& update_state(T& state, cmem_t v) {
-  return state.update(v.data, v.size);
 }
 template <class T>
 T& update_state(T& state, mem_t v) {
@@ -172,7 +167,11 @@ T& update_state(T& state, const V (&v)[N]) {
 }
 template <class T, typename V>
 T& update_state(T& state, const std::vector<V>& v) {
-  for (std::size_t i = 0; i < (int)v.size(); i++) update_state(state, v[i]);
+  update_state(state, uint64_t(v.size()));
+  for (std::size_t i = 0; i < v.size(); i++) {
+    update_state(state, uint64_t(get_bin_size(v[i])));
+    update_state(state, v[i]);
+  }
   return state;
 }
 template <class T, typename V>
@@ -183,7 +182,11 @@ T& update_state(T& state, const V& v) {
 
 template <class T, typename V>
 T& update_state(T& state, const coinbase::array_view_t<V>& v) {
-  for (int i = 0; i < v.count; i++) update_state(state, v.ptr[i]);
+  update_state(state, uint64_t(v.count));
+  for (int i = 0; i < v.count; i++) {
+    update_state(state, uint64_t(get_bin_size(v.ptr[i])));
+    update_state(state, v.ptr[i]);
+  }
   return state;
 }
 
@@ -340,12 +343,6 @@ class hmac_template_t {
 typedef hmac_template_t<hash_e::sha256> hmac_sha256_t;
 typedef hmac_template_t<hash_e::sha384> hmac_sha384_t;
 typedef hmac_template_t<hash_e::sha512> hmac_sha512_t;
-
-/**
- * @specs:
- * - basic-primitives-spec | KDF-1P
- */
-buf_t pbkdf2(hash_e type, mem_t password, mem_t salt, int iter, int out_size);
 
 /**
  * RFC 5869 HKDF (HMAC-based Extract-and-Expand Key Derivation Function)

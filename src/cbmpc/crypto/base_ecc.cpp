@@ -837,16 +837,6 @@ ecc_point_t ecc_point_t::weighted_sum(const bn_t& x0, const ecc_point_t& P0, con
         crypto::consttime_point_add_scope_t consttime_point_add_scope;
         return x0 * P0 + x1 * P1;
       }
-      case ct_add_support_e::Conditional: {
-        const mod_t& q = curve.order();
-        bn_t bias0 = bn_t::rand(q);
-        bn_t bias1 = bn_t::rand(q);
-        ecc_point_t Bias = bias0 * P0 + bias1 * P1;
-        bias0 = q.add(bias0, x0);
-        bias1 = q.add(bias1, x1);
-        crypto::consttime_point_add_scope_t consttime_point_add_scope;
-        return bias0 * P0 + bias1 * P1 - Bias;
-      }
       case ct_add_support_e::None:
       default: {
         bn_t bias = bn_t::rand(curve.order());
@@ -1032,17 +1022,14 @@ error_t ecdh_t::execute(const ecc_point_t& P, buf_t& out) const {
     return SUCCESS;
   } else {
     buf_t pub_oct = P.to_oct();
-    int size = P.get_curve().size();
-    return exec(ctx, cmem_t(pub_oct), cmem_t{out.alloc(size), size});
+    return exec(ctx, mem_t(pub_oct.data(), pub_oct.size()), out);
   }
 }
 
-error_t ecdh_t::execute(void* ctx, cmem_t pub_key, cmem_t out_secret)  // static
-{
+error_t ecdh_t::execute(void* ctx, mem_t pub_key, buf_t& out_secret) {  // static
   error_t rv = UNINITIALIZED_ERROR;
   const ecc_prv_key_t* key = (const ecc_prv_key_t*)ctx;
   ecurve_t curve = key->get_curve();
-  if (out_secret.size != curve.size()) return coinbase::error(E_BADARG, "Bad ECDH size");
 
   ecc_point_t P;
   {
@@ -1050,8 +1037,7 @@ error_t ecdh_t::execute(void* ctx, cmem_t pub_key, cmem_t out_secret)  // static
     if (rv = P.from_oct(curve, pub_key)) return rv;
   }
 
-  buf_t out = key->ecdh(P);
-  memmove(out_secret.data, out.data(), out_secret.size);
+  out_secret = key->ecdh(P);
   return SUCCESS;
 }
 

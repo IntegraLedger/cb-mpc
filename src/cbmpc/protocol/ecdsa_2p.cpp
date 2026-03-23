@@ -17,11 +17,9 @@ enum sign_mode_e {
 
 void paillier_gen_interactive_t::step1_p1_to_p2(crypto::paillier_t& paillier, const bn_t& x1, const mod_t& q,
                                                 bn_t& c_key) {
-  // The length of the Paillier is hardcoded to 2048 bits, which is enough for the curves supported by the library.
-  // If a larger curves are used (e.g., curves larger than P-521), then Paillier generate should be updated to use
-  // larger bitlengths.
   if (!paillier.has_private_key()) paillier.generate();
   const mod_t& N = paillier.get_N();
+  cb_assert(N > ((q * q * q) << (3 * SEC_P_STAT + SEC_P_COM + 1)));
   this->N = N;
 
   r_key = bn_t::rand(N);
@@ -102,6 +100,7 @@ error_t dkg(job_2p_t& job, ecurve_t curve, key_t& key) {
   }
 
   if (rv = job.p1_to_p2(ec_dkg.msg1, paillier_gen.msg1, key.c_key)) return rv;
+  if (paillier_gen.c_key != key.c_key) return coinbase::error(E_CRYPTO, "paillier_gen.c_key != key.c_key");
 
   if (job.is_p2()) {
     ec_dkg.step2_p2_to_p1(key.x_share);
@@ -209,6 +208,25 @@ error_t refresh(job_2p_t& job, const key_t& key, key_t& new_key) {
   new_key.c_key = new_key.paillier.add_scalar(c_key_tag, rho, crypto::paillier_t::rerand_e::off);
 
   if (job.is_p1()) {
+    // Side-channel / correctness note:
+    // This update must be done as a *plain integer* addition (not reduced mod q), because we
+    // also homomorphically apply the same shift to the Paillier-encrypted share:
+    //   new_key.c_key = Enc_{N'}(key.x_share) ⊕ rho
+    // so `new_key.x_share` is intended to match the Paillier plaintext representative (mod N'),
+    // not the reduced scalar in Z_q.
+    //
+    // From a side-channel perspective, this `bn_t` addition currently goes through OpenSSL `BN_add`
+    // and is not guaranteed constant-time. However, OpenSSL represents `BIGNUM`s as an array of
+    // machine-word "limbs" (`BN_ULONG`, typically 64-bit), and `BN_add` is essentially a single
+    // pass over those limbs with carry propagation. Here `rho < q`, but `key.x_share` is an integer
+    // representative that may grow beyond q after refreshes. As a result, the only realistic
+    // leakage from this single add is very coarse: the effective limb length ("top") / bitlength
+    // and possibly a final carry-out. In practice that mostly correlates with how many times
+    // refresh has been applied (i.e., the magnitude of the representative), not the underlying
+    // secret scalar mod q. We accept this tradeoff because utilizing such small variation would
+    // also require very accurate timing and many repeated measurements (typically only feasible
+    // for a local/co-resident attacker); over the network this signal is dominated by noise.
+    // Therefore, in our threat model this is not considered a real issue.
     new_key.x_share = key.x_share + rho;
   } else {
     MODULO(q) new_key.x_share = key.x_share - rho;
@@ -224,6 +242,7 @@ error_t sign_batch_impl(job_2p_t& job, buf_t& sid, const key_t& key, const std::
   bool global_abort_mode = sign_mode_flag == SIGN_MODE_GLOBAL_ABORT;
 
   auto n_sigs = msgs.size();
+  if (n_sigs == 0) return coinbase::error(E_BADARG, "ecdsa_2p: empty batch");
   sigs.resize(n_sigs);
   const ecurve_t curve = key.curve;
   const auto& G = curve.generator();
@@ -268,6 +287,7 @@ error_t sign_batch_impl(job_2p_t& job, buf_t& sid, const key_t& key, const std::
   }
 
   if (rv = job.p2_to_p1(R2, pi_2)) return rv;
+  if (job.is_p1() && R2.size() != n_sigs) return coinbase::error(E_CRYPTO, "ecdsa_2p: inconsistent batch size (R2)");
 
   std::vector<ecc_point_t> R(n_sigs);
 
@@ -287,8 +307,7 @@ error_t sign_batch_impl(job_2p_t& job, buf_t& sid, const key_t& key, const std::
 
   // This is the step 4, taken from the section in the spec called ZK Proof of Correctness for Message 4 from P2 to P1
   if (job.is_p2()) {
-    const mod_t& N = key.paillier.get_N();
-
+    if (R1.size() != n_sigs) return coinbase::error(E_CRYPTO, "ecdsa_2p: inconsistent batch size (R1)");
     if (rv = com.open(msgs, R1, pi_1)) return rv;
 
     // Checking that R1 values are valid is done in the verify function.
@@ -297,8 +316,9 @@ error_t sign_batch_impl(job_2p_t& job, buf_t& sid, const key_t& key, const std::
       R[i] = k2[i] * R1[i];
       r[i] = R[i].get_x() % q;
       bn_t rho = bn_t::rand((q * q) << (SEC_P_STAT * 2));
-      bn_t rc = bn_t::rand(N);
-      if (!mod_t::coprime(rc, N)) return coinbase::error(E_CRYPTO, "gcd(rc, N) != 1");
+      bn_t rc;
+      if (rv = key.paillier.rand_N_star(rc, /*resample_until_coprime=*/false))
+        return coinbase::error(rv, "gcd(rc, N) != 1");
 
       bn_t k2_inv;
       bn_t temp;
@@ -318,8 +338,9 @@ error_t sign_batch_impl(job_2p_t& job, buf_t& sid, const key_t& key, const std::
       c[i] = pai_c.to_bn();
 
       if (!global_abort_mode) {
-        zk_ecdsa[i].prove(key.paillier, c_key_tag, pai_c, key.x_share * G, R2[i], m[i], r[i], k2[i], key.x_share, rho,
-                          rc, sid, i);
+        if (rv = zk_ecdsa[i].prove(key.paillier, c_key_tag, pai_c, key.x_share * G, R2[i], m[i], r[i], k2[i],
+                                   key.x_share, rho, rc, sid, i))
+          return rv;
       }
     }
   }
@@ -331,6 +352,9 @@ error_t sign_batch_impl(job_2p_t& job, buf_t& sid, const key_t& key, const std::
   }
 
   if (job.is_p1()) {
+    if (c.size() != n_sigs) return coinbase::error(E_CRYPTO, "ecdsa_2p: inconsistent batch size (c)");
+    if (!global_abort_mode && zk_ecdsa.size() != n_sigs)
+      return coinbase::error(E_CRYPTO, "ecdsa_2p: inconsistent batch size (zk_ecdsa)");
     for (int i = 0; i < n_sigs; i++) {
       r[i] = R[i].get_x() % q;
 
@@ -398,12 +422,12 @@ error_t sign_with_global_abort(job_2p_t& job, buf_t& sid, const key_t& key, cons
   return SUCCESS;
 }
 
-void zk_ecdsa_sign_2pc_integer_commit_t::prove(const crypto::paillier_t& paillier,
-                                               const crypto::paillier_t::elem_t& c_key,
-                                               const crypto::paillier_t::elem_t& c, const ecc_point_t& Q2,
-                                               const ecc_point_t& R2, const bn_t& m_tag, const bn_t& r, const bn_t& k2,
-                                               const bn_t& x2, const bn_t& rho, const bn_t& rc, mem_t sid,
-                                               uint64_t aux) {
+error_t zk_ecdsa_sign_2pc_integer_commit_t::prove(const crypto::paillier_t& paillier,
+                                                  const crypto::paillier_t::elem_t& c_key,
+                                                  const crypto::paillier_t::elem_t& c, const ecc_point_t& Q2,
+                                                  const ecc_point_t& R2, const bn_t& m_tag, const bn_t& r,
+                                                  const bn_t& k2, const bn_t& x2, const bn_t& rho, const bn_t& rc,
+                                                  mem_t sid, uint64_t aux) {
   crypto::paillier_t::rerand_scope_t paillier_rerand(crypto::paillier_t::rerand_e::off);
 
   const mod_t& N = paillier.get_N();
@@ -456,8 +480,9 @@ void zk_ecdsa_sign_2pc_integer_commit_t::prove(const crypto::paillier_t& paillie
   G_tag = w1_tag * R2;
   Q2_tag = w2_tag * R2;
 
-  bn_t r_enc = bn_t::rand(N);
-  cb_assert(mod_t::coprime(r_enc, N));
+  bn_t r_enc;
+  if (error_t rv = paillier.rand_N_star(r_enc, /*resample_until_coprime=*/false))
+    return coinbase::error(rv, "paillier_t::rand_N_star: gcd(r_enc, N) != 1");
 
   bn_t temp = w1_tag * m_tag + w2_tag * r + w3_tag * q;
   crypto::paillier_t::elem_t C_enc_tag = paillier.enc(temp, r_enc) + (w1_tag * c_key_tag);
@@ -477,6 +502,8 @@ void zk_ecdsa_sign_2pc_integer_commit_t::prove(const crypto::paillier_t& paillie
   r3_w_tag_tag = r3_w_tag + e * r3_w;
 
   MODULO(N) { r_enc_tag_tag = r_enc * w4.pow(e); }
+
+  return SUCCESS;
 }
 
 error_t zk_ecdsa_sign_2pc_integer_commit_t::verify(const ecurve_t curve, const crypto::paillier_t& paillier,
