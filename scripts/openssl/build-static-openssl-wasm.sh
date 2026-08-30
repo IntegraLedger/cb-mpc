@@ -1,5 +1,5 @@
 #!/bin/bash
-# Build OpenSSL 3.2.0 for WebAssembly (Emscripten)
+# Build OpenSSL 3.6.4 for WebAssembly (Emscripten)
 set -e
 
 # Ensure Emscripten is activated
@@ -12,12 +12,12 @@ fi
 INSTALL_PREFIX="${CBMPC_OPENSSL_WASM_ROOT:-/tmp/openssl-wasm}"
 
 cd /tmp
-if [ ! -f openssl-3.2.0.tar.gz ]; then
-  curl -L https://github.com/openssl/openssl/releases/download/openssl-3.2.0/openssl-3.2.0.tar.gz --output openssl-3.2.0.tar.gz
+if [ ! -f openssl-3.6.4.tar.gz ]; then
+  curl -L https://github.com/openssl/openssl/releases/download/openssl-3.6.4/openssl-3.6.4.tar.gz --output openssl-3.6.4.tar.gz
 fi
 
-expectedHash='14c826f07c7e433706fb5c69fa9e25dab95684844b4c962a2cf1bf183eb4690e'
-fileHash=$(sha256sum openssl-3.2.0.tar.gz | cut -d " " -f 1)
+expectedHash='9bffaa1ad1e07b354c21bd3324ec02fa15579f45a7d0494b3e74bc449b7333ef'
+fileHash=$(sha256sum openssl-3.6.4.tar.gz | cut -d " " -f 1)
 
 if [ "$expectedHash" != "$fileHash" ]; then
   echo 'ERROR: SHA256 DOES NOT MATCH!'
@@ -26,9 +26,9 @@ if [ "$expectedHash" != "$fileHash" ]; then
   exit 1
 fi
 
-rm -rf openssl-3.2.0
-tar -xzf openssl-3.2.0.tar.gz
-cd openssl-3.2.0
+rm -rf openssl-3.6.4
+tar -xzf openssl-3.6.4.tar.gz
+cd openssl-3.6.4
 
 # Apply the same patch as native builds
 sed -i '' 's/^static//' crypto/ec/curve25519.c 2>/dev/null || sed -i 's/^static//' crypto/ec/curve25519.c
