@@ -19,9 +19,9 @@ import (
 #cgo linux,!android                 CFLAGS:    -I/usr/local/include
 #cgo linux,!android                 CXXFLAGS:  -I/usr/local/include
 #cgo linux,!android                 LDFLAGS:   /usr/local/lib64/libcrypto.a
-#cgo darwin,!iossimulator,!ios  	CFLAGS:    -I/usr/local/opt/openssl@3.2.0/include
-#cgo darwin,!iossimulator,!ios  	CXXFLAGS:  -I/usr/local/opt/openssl@3.2.0/include
-#cgo darwin,!iossimulator,!ios  	LDFLAGS:   -L/usr/local/opt/openssl@3.2.0/lib
+#cgo darwin,!iossimulator,!ios  	CFLAGS:    -I/usr/local/opt/openssl@3.6.4/include
+#cgo darwin,!iossimulator,!ios  	CXXFLAGS:  -I/usr/local/opt/openssl@3.6.4/include
+#cgo darwin,!iossimulator,!ios  	LDFLAGS:   -L/usr/local/opt/openssl@3.6.4/lib
 
 #cgo CFLAGS:    -I${SRCDIR}
 #cgo CXXFLAGS:  -I${SRCDIR}
