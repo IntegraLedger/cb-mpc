@@ -20,8 +20,15 @@ struct det_state_t {
   bool installed = false;
 };
 
-det_state_t g_state;
-const RAND_METHOD* g_saved = nullptr;
+// THREAD-LOCAL state. A two-party harness runs both parties in threads; if they
+// shared one counter their draws would interleave non-deterministically and the
+// transcript would not reproduce — defeating the entire purpose. Each thread
+// therefore installs its own seed and draws from its own stream, which also
+// mirrors how the real protocol works (each party has its own RNG).
+// The RAND_METHOD pointer itself is process-wide, which is fine: the method is
+// stateless and dispatches into this per-thread state.
+thread_local det_state_t g_state;
+thread_local const RAND_METHOD* g_saved = nullptr;
 
 void refill() {
   uint8_t ctr[8];

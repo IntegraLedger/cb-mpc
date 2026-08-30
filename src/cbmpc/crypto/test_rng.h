@@ -33,6 +33,10 @@
 extern "C" {
 
 // Install the deterministic RNG, seeded from `seed`. Returns 1 on success.
+// State is THREAD-LOCAL: call this on every thread that must be deterministic.
+// A two-party harness gives each party its own seed, so their draws do not
+// interleave — which is both what reproducibility requires and what the real
+// protocol does.
 // Every subsequent RAND_bytes / BN_rand / bn_t::rand draw becomes a pure
 // function of (seed, call sequence).
 int cbmpc_test_rng_install(const uint8_t* seed, size_t seed_len);
