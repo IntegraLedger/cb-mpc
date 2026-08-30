@@ -14,6 +14,14 @@ option(CBMPC_PLATFORM_DEP_OUTPUT_DIR
        "library output directory will be platform-dependent" OFF)
 
 option(BUILD_TESTS "Also build the unit and integration tests" ON)
+
+# ⛔ TEST ONLY. Compiles a deterministic RAND_METHOD shim into the library so
+# protocol transcripts can be byte-compared between the native and WASM builds
+# (Integra remediation plan 0.4). Default OFF. Even when ON the shim is inert
+# until cbmpc_test_rng_install() is called explicitly — there is no static
+# initializer — and CI asserts the symbol is absent from shipped artifacts.
+# NEVER enable this for a production build.
+option(CBMPC_TEST_RNG "TEST ONLY: build the deterministic RNG shim" OFF)
 option(BUILD_DUDECT "Also build the dudect tests" OFF)
 
 
