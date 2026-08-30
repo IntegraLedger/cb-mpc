@@ -4,6 +4,10 @@ if(CMAKE_SYSTEM_NAME MATCHES "Emscripten")
     set(IS_WASM_TYPES true)
   endif()
   set(CMAKE_OS "JS")
+  # Set explicitly: CMAKE_ARCH is otherwise only assigned for IS_ARM64/IS_X86_64
+  # (cmake/compilation_flags.cmake:34-42), neither of which matches under
+  # Emscripten. Without this, CBMPC_PLATFORM_DEP_OUTPUT_DIR yields "lib/Release/JS-".
+  set(CMAKE_ARCH "wasm32")
 elseif(CMAKE_SYSTEM_NAME MATCHES "Android")
   set(ANDROID_SDK 21)
   set(IS_ANDROID true)

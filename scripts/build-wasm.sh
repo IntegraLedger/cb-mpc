@@ -34,7 +34,13 @@ mkdir -p "$OUTPUT_DIR"
 
 # Configure with Emscripten
 cd "$BUILD_DIR"
+# CBMPC_PLATFORM_DEP_OUTPUT_DIR=ON is REQUIRED here, not cosmetic. With it OFF
+# (the default) this build writes $ROOT_DIR/lib/Release/libcbmpc.a — the exact
+# path the NATIVE build writes and that scripts/go-cgo.sh links. One path, two
+# incompatible object formats, last writer wins: building WASM silently replaced
+# the native archive with wasm objects and vice versa.
 emcmake cmake \
+  -DCBMPC_PLATFORM_DEP_OUTPUT_DIR=ON \
   -DCMAKE_BUILD_TYPE=Release \
   -DBUILD_TESTS=OFF \
   -DBUILD_DUDECT=OFF \
@@ -46,7 +52,9 @@ emcmake cmake \
 emmake make -j$(sysctl -n hw.ncpu 2>/dev/null || nproc)
 
 echo ""
-echo "Static library built: $BUILD_DIR/lib/Release/libcbmpc.a"
+WASM_LIB="$ROOT_DIR/lib/Release/JS-wasm32/libcbmpc.a"
+if [ ! -f "$WASM_LIB" ]; then echo "ERROR: expected WASM archive at $WASM_LIB" >&2; exit 1; fi
+echo "Static library built: $WASM_LIB"
 
 # Link everything into a WASM module
 echo ""
@@ -73,7 +81,7 @@ emcc \
   -s ENVIRONMENT='web,worker' \
   -s DISABLE_EXCEPTION_CATCHING=0 \
   "$BUILD_DIR/src/cbmpc/wasm/CMakeFiles/cbmpc_wasm.dir/wasm_ecdsa2p.cpp.o" \
-  "$ROOT_DIR/lib/Release/libcbmpc.a" \
+  "$WASM_LIB" \
   "$OPENSSL_WASM_ROOT/lib/libcrypto.a" \
   -o "$OUTPUT_DIR/cbmpc.js"
 
