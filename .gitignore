@@ -27,3 +27,6 @@ build-wasm/
 
 # Harness binaries (mirrors lib/ above; CMake BIN_DIR)
 bin/
+
+# 0.7/0.5 test-RNG WASM build tree (never shipped)
+build-wasm-testrng/
