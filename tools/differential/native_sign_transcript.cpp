@@ -104,6 +104,17 @@ int main(int argc, char** argv) {
   std::vector<uint8_t> msg_hash(32);
   for (int i = 0; i < 32; i++) msg_hash[i] = uint8_t(i);
 
+  // Optional third argument: a hex sid to supply, which skips the handshake.
+  std::vector<uint8_t> fixed_sid;
+  if (argc > 3) {
+    const char* h = argv[3];
+    for (size_t i = 0; h[i] && h[i + 1]; i += 2) {
+      auto nib = [](char c) { return c <= '9' ? c - '0' : (c | 32) - 'a' + 10; };
+      fixed_sid.push_back(uint8_t(nib(h[i]) << 4 | nib(h[i + 1])));
+    }
+    fprintf(stderr, "supplied sid: %zu bytes (handshake skipped)\n", fixed_sid.size());
+  }
+
   auto transport = std::make_shared<recording_transport_t>();
   ecdsa2pc::key_t k1, k2;
   buf_t sig1, sig2;
@@ -115,7 +126,14 @@ int main(int argc, char** argv) {
     job_2p_t job(role, crypto::pname_t("server"), crypto::pname_t("client"), transport);
     *rv = ecdsa2pc::dkg(job, crypto::curve_secp256k1, *key);
     if (*rv) { cbmpc_test_rng_uninstall(); return; }
-    buf_t sid;  // empty in; the protocol fills it
+    // ⚠️ sid handling is a CHOICE, not a protocol constant. sign_batch_impl
+    // runs generate_sid_fixed_2p ONLY when the sid is empty
+    // (ecdsa_2p.cpp:256). Pass one and the two-message handshake disappears.
+    // The WASM has P1 generate a sid locally and carry it in its first message,
+    // so comparing against an EMPTY-sid native run compares two different
+    // deployment choices, not two implementations of the same one.
+    buf_t sid;
+    if (!fixed_sid.empty()) sid = buf_t(fixed_sid.data(), (int)fixed_sid.size());
     *rv = ecdsa2pc::sign(job, sid, *key, mem_t(msg_hash.data(), (int)msg_hash.size()), *sig);
     cbmpc_test_rng_uninstall();
   };
@@ -127,7 +145,7 @@ int main(int argc, char** argv) {
 
   // Keygen is 3 messages (measured by native_keygen_transcript); the rest is
   // the signing exchange. Asserted rather than assumed.
-  keygen_msgs = 3;
+  keygen_msgs = 3;  // measured by native_keygen_transcript
   if (transport->transcript_.size() < keygen_msgs) {
     fprintf(stderr, "only %zu messages: keygen did not complete\n", transport->transcript_.size());
     return 1;

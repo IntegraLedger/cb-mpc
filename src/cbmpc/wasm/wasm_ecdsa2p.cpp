@@ -128,6 +128,7 @@ struct SignSessionState {
     std::unique_ptr<zk::uc_batch_dl_t> pi_1;  // ZK proof generated in round 0
     std::unique_ptr<coinbase::crypto::commitment_t> com;  // Commitment generated in round 0
     std::vector<ecc_point_t> R1_vec;  // R1 as vector for serialization
+    ecc_point_t R2;    // P2's R point, kept for the round-2 zk_ecdsa verification
 
     SignSessionState() : key_ref(nullptr), round(0), complete(false) {}
 };
@@ -1237,6 +1238,7 @@ int wasm_sign_p1_process(
                 }
 
                 // Compute combined R = k1 * R2
+                state->R2 = R2_vec[0];  // kept: the round-2 zk_ecdsa verification needs it
                 state->R = state->k1 * R2_vec[0];
                 state->r = state->R.get_x() % q;
 
@@ -1263,13 +1265,37 @@ int wasm_sign_p1_process(
                     return WASM_MPC_PARAM_ERROR;
                 }
 
-                // Deserialize P2's msg: ciphertext c
-                bn_t c;
+                // Deserialize P2's msg: (c, zk_ecdsa), matching the native wire shape.
+                std::vector<bn_t> c_vec;
+                std::vector<ecdsa2pc::zk_ecdsa_sign_2pc_integer_commit_t> zk_vec;
                 mem_t msg_mem(const_cast<uint8_t*>(msg_in), static_cast<int>(msg_in_len));
-                error_t rv = deser(msg_mem, c);
+                error_t rv = deser(msg_mem, c_vec, zk_vec);
                 if (rv) {
-                    set_error("Failed to deserialize P2's ciphertext");
+                    set_error("Failed to deserialize P2's ciphertext message");
                     return WASM_MPC_ERROR;
+                }
+                if (c_vec.size() != 1 || zk_vec.size() != 1) {
+                    set_error("Inconsistent batch size from P2");
+                    return WASM_MPC_ERROR;
+                }
+                bn_t c = c_vec[0];
+
+                // ⛔ Plan step 2.2: verify P2's proof BEFORE decrypting. Without
+                // it P1 decrypts an unproven ciphertext and its accept/reject on
+                // the resulting signature becomes an oracle for a malicious P2.
+                {
+                    crypto::paillier_t::rerand_scope_t paillier_rerand(crypto::paillier_t::rerand_e::off);
+                    crypto::paillier_t::elem_t c_key_tag =
+                        state->key_ref->paillier.elem(state->key_ref->c_key) + (q << SEC_P_STAT);
+                    crypto::paillier_t::elem_t pai_c = state->key_ref->paillier.elem(c);
+                    ecc_point_t Q_minus_xG = state->key_ref->Q - state->key_ref->x_share * G;
+                    bn_t m_bn = curve_msg_to_bn(state->message_hash, curve);
+                    rv = zk_vec[0].verify(curve, state->key_ref->paillier, c_key_tag, pai_c, Q_minus_xG,
+                                          state->R2, m_bn, state->r, state->sid, 0);
+                    if (rv) {
+                        set_error("zk_ecdsa verify failed");
+                        return WASM_MPC_ERROR;
+                    }
                 }
 
                 // Decrypt and compute s
@@ -1503,8 +1529,13 @@ int wasm_sign_p2_process(
 
                 // Generate random values
                 bn_t rho = bn_t::rand((q * q) << (SEC_P_STAT * 2));
-                bn_t rc = bn_t::rand(N);
-                if (!mod_t::coprime(rc, N)) {
+                // ⛔ Plan step 2.2: this drew rc as bn_t::rand(N) plus a coprime
+                // check, where the reference implementation samples Z*_N with
+                // paillier.rand_N_star (protocol/ecdsa_2p.cpp:320). Different
+                // sampler, different draw from the RNG, so the two could never
+                // agree byte for byte. Use the library's own sampler.
+                bn_t rc;
+                if (error_t rcrv = state->key_ref->paillier.rand_N_star(rc, /*resample_until_coprime=*/false)) {
                     set_error("gcd(rc, N) != 1");
                     return WASM_MPC_ERROR;
                 }
@@ -1525,8 +1556,30 @@ int wasm_sign_p2_process(
 
                 bn_t c = pai_c.to_bn();
 
-                // Serialize ciphertext
-                buf_t out_buf = ser(c);
+                // ⛔ Plan step 2.2. This used to be `ser(c)` with c a bare bn_t
+                // and NO proof, where the native protocol sends
+                // job.p2_to_p1(c, zk_ecdsa) with c a vector
+                // (protocol/ecdsa_2p.cpp:349). Measured before this change: the
+                // native final message is 4013 bytes and the WASM's was 514 --
+                // a bare Paillier ciphertext, 512-byte N^2 plus a length.
+                //
+                // The proof is what stops a malicious P2 handing P1 a crafted
+                // ciphertext and reading P1's accept/reject as an oracle. P1's
+                // final ECDSA signature check is NOT a substitute for it: that
+                // check IS the oracle.
+                std::vector<bn_t> c_vec = { c };
+                std::vector<ecdsa2pc::zk_ecdsa_sign_2pc_integer_commit_t> zk_vec(1);
+                error_t zrv = zk_vec[0].prove(state->key_ref->paillier, c_key_tag, pai_c,
+                                              state->key_ref->x_share * G, state->R2, m, state->r,
+                                              state->k2, state->key_ref->x_share, rho, rc,
+                                              state->sid, 0);
+                if (zrv) {
+                    set_error("zk_ecdsa prove failed");
+                    return WASM_MPC_ERROR;
+                }
+
+                // Serialize (c, zk_ecdsa) exactly as job.p2_to_p1(c, zk_ecdsa) does.
+                buf_t out_buf = ser(c_vec, zk_vec);
 
                 *msg_out_len = out_buf.size();
                 *msg_out = static_cast<uint8_t*>(malloc(*msg_out_len));

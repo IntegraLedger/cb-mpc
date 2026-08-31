@@ -162,6 +162,8 @@ int main(int argc, char** argv) {
   uint8_t b1 = 0x11, b2 = 0x22;
   if (argc > 1) b1 = (uint8_t)strtol(argv[1], nullptr, 16);
   if (argc > 2) b2 = (uint8_t)strtol(argv[2], nullptr, 16);
+  bool tamper = false;
+  for (int i = 1; i < argc; i++) if (std::string(argv[i]) == "--tamper") tamper = true;
   uint8_t seed_p1[32], seed_p2[32];
   memset(seed_p1, b1, sizeof(seed_p1));
   memset(seed_p2, b2, sizeof(seed_p2));
@@ -236,6 +238,13 @@ int main(int argc, char** argv) {
     // "Expected P2's ciphertext message".
     auto s_msg4 = ch.recv(1);
     if (s_msg4.empty()) { rv1 = -102; return; }
+    // Negative control for plan step 2.2: with --tamper, flip one byte deep
+    // inside P2's zk_ecdsa proof. P1 MUST reject. Without this the new verify
+    // call could be inert and every run would still look green.
+    if (tamper && s_msg4.size() > 3000) {
+      s_msg4[3000] ^= 0x01;
+      fprintf(stderr, "TAMPERED: flipped byte 3000 of P2's %zu-byte proof message\n", s_msg4.size());
+    }
     out = nullptr;
     if ((rv1 = wasm_sign_p1_process(&ss, s_msg4.data(), s_msg4.size(), &out, &out_len, &done))) { fprintf(stderr, "p1 sign r2: %s\n", wasm_get_last_error()); return; }
     if (out) wasm_free(out);
