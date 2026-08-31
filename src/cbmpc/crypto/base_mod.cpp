@@ -204,10 +204,36 @@ static void cnd_swap(int n, bool flag, BN_ULONG a[], BN_ULONG b[]) {
   }
 }
 
+// ⛔ These used to call addx()/subx() as `addx(a[i], b[i], (uint64_t&)carry)`.
+// addx takes a `uint64_t&` and WRITES EIGHT BYTES through it, while `carry` is
+// a BN_ULONG -- four bytes on a 32-bit build. That is an out-of-bounds write
+// through a reinterpreted reference, benign only because BN_ULONG happens to
+// be uint64_t on 64-bit platforms. Independently, addx takes its carry-out as
+// (x + y + carry) >> 64, so with 32-bit words the carry was ALWAYS ZERO and
+// never propagated between words.
+//
+// Measured 2026-08-31: under Emscripten this made mod_t::scr_inv() return 0,
+// so N_inv_mod_phiN_2048()'s alpha was 0, every valid_paillier sigma was
+// wrong, and keygen died at "Paillier gen step4 failed: verification error".
+// mod_t::_mod() already carried a #if guard routing 32-bit around the same
+// class of defect in the Barrett reduction; this site was missed.
+//
+// The carry is now computed at BN_ULONG width, so these are correct for any
+// word size. Branchless: the comparisons lower to flag arithmetic, not jumps,
+// which is what the constant-time requirement here needs.
+//
+// (C-style casts below: BN_ULONG is a #define for `unsigned long`, not a
+// typedef, so BN_ULONG(x) is a syntax error.)
 static BN_ULONG ct_bn_add_words(BN_ULONG* r, const BN_ULONG* a, const BN_ULONG* b, int n) {
   BN_ULONG carry = 0;
   for (int i = 0; i < n; i++) {
-    r[i] = addx(a[i], b[i], (uint64_t&)carry);
+    BN_ULONG ai = a[i], bi = b[i];
+    BN_ULONG sum = ai + bi;
+    BN_ULONG carry1 = (BN_ULONG)(sum < ai);
+    BN_ULONG total = sum + carry;
+    BN_ULONG carry2 = (BN_ULONG)(total < sum);
+    r[i] = total;
+    carry = carry1 | carry2;  // at most one of the two can be set
   }
   return carry;
 }
@@ -215,7 +241,13 @@ static BN_ULONG ct_bn_add_words(BN_ULONG* r, const BN_ULONG* a, const BN_ULONG* 
 static BN_ULONG ct_bn_sub_words(BN_ULONG* r, const BN_ULONG* a, const BN_ULONG* b, int n) {
   BN_ULONG borrow = 0;
   for (int i = 0; i < n; i++) {
-    r[i] = subx(a[i], b[i], (uint64_t&)borrow);
+    BN_ULONG ai = a[i], bi = b[i];
+    BN_ULONG diff = ai - bi;
+    BN_ULONG borrow1 = (BN_ULONG)(ai < bi);
+    BN_ULONG total = diff - borrow;
+    BN_ULONG borrow2 = (BN_ULONG)(diff < borrow);
+    r[i] = total;
+    borrow = borrow1 | borrow2;  // at most one of the two can be set
   }
   return borrow;
 }
