@@ -117,8 +117,14 @@ function installSeed(a, byte) {
   process.stderr.write(`seeds p1=0x${b1.toString(16).padStart(2, '0')} p2=0x${b2.toString(16).padStart(2, '0')}\n`);
 
   a1.init(); a2.init();
-  installSeed(a1, b1);
-  installSeed(a2, b2);
+  // Pass "none" as the p1 seed to run on REAL randomness with the shim left
+  // uninstalled. This is the control that distinguishes "the artifact is
+  // broken" from "the shim breaks the artifact": the shim is inert until
+  // installed, by design, so skipping the install exercises the production
+  // code path. Transcripts from a no-shim run are NOT comparable across runs.
+  const useShim = (process.argv[3] || '') !== 'none';
+  if (useShim) { installSeed(a1, b1); installSeed(a2, b2); }
+  else process.stderr.write('shim NOT installed: running on real randomness\n');
   const curve = a1.curveCode();
 
   const transcript = [];
