@@ -45,20 +45,27 @@ static void set_error(const std::string& msg) {
     g_last_error = msg;
 }
 
-// PIDs for party identification
-// Use lazy initialization to avoid static initialization order issues in WASM
-// The hash functions used by pid_from_name may not work correctly at static init time
-
-static const mpc_pid_t& get_p1_pid_as_client() {
-    static mpc_pid_t pid;
-    static bool initialized = false;
-    if (!initialized) {
-        pid = pid_from_name("client");
-        initialized = true;
-    }
-    return pid;
-}
-
+// P1's party ID.
+//
+// ⛔ Plan step 1.1. There used to be TWO of these -- get_p1_pid_as_client()
+// and get_p1_pid_as_server() -- and the P1 code paths reached the "client" one
+// through a third alias while the P2 paths correctly used the "server" one. P1
+// therefore committed under pid_from_name("client") and P2 opened under
+// pid_from_name("server"), so every P1 role died at commitment_t::open
+// ("EC DKG step4 failed: commitment open"). Reproduced, then fixed, 2026-08-31.
+//
+// P1 is unambiguously "server": both real counterparties build their job with
+// pnames {"server", "client"} -- index 0 for the enclave
+// (internal/enclave/mpc_runner.go:90,192) and index 1 for the client
+// (cmd/testclient/main.go:448,567) -- and job_mp_t derives each party's pid as
+// pid_from_name(names[i]).
+//
+// ⛔ The audit warned that the tempting "fix" is to weaken the commitment
+// check. It was never the check; it was the constant. There is now exactly ONE
+// name for P1's pid, so the two sides cannot drift apart again.
+//
+// Lazy initialization avoids static-initialization-order problems in WASM: the
+// hash functions pid_from_name uses may not work at static init time.
 static const mpc_pid_t& get_p1_pid_as_server() {
     static mpc_pid_t pid;
     static bool initialized = false;
@@ -69,10 +76,7 @@ static const mpc_pid_t& get_p1_pid_as_server() {
     return pid;
 }
 
-// Macros for convenience (acts like the old static constants)
-#define P1_PID_AS_CLIENT get_p1_pid_as_client()
 #define P1_PID_AS_SERVER get_p1_pid_as_server()
-#define DEFAULT_P1_PID get_p1_pid_as_client()
 
 // ============================================================================
 // Internal State Types
@@ -447,8 +451,8 @@ int wasm_keygen_p1_start(int curve, wasm_keygen_session* out_session) {
         state->key.x_share = bn_t::rand(q);
 
         // Initialize protocol objects
-        state->ec_dkg = std::make_unique<eckey::dkg_2p_t>(ec, DEFAULT_P1_PID);
-        state->paillier_gen = std::make_unique<ecdsa2pc::paillier_gen_interactive_t>(DEFAULT_P1_PID);
+        state->ec_dkg = std::make_unique<eckey::dkg_2p_t>(ec, P1_PID_AS_SERVER);
+        state->paillier_gen = std::make_unique<ecdsa2pc::paillier_gen_interactive_t>(P1_PID_AS_SERVER);
 
         out_session->opaque = state;
         return WASM_MPC_SUCCESS;
@@ -549,7 +553,7 @@ int wasm_keygen_p1_process(
                     state->key.paillier,
                     state->key.x_share,
                     state->ec_dkg->Q1,
-                    DEFAULT_P1_PID,
+                    P1_PID_AS_SERVER,
                     state->ec_dkg->sid
                 );
 
@@ -1188,7 +1192,7 @@ int wasm_sign_p1_process(
 
                 // Create commitment and store it
                 // Adding msgs here serves as a way of checking the consistency of the input messages
-                state->com = std::make_unique<coinbase::crypto::commitment_t>(state->sid, DEFAULT_P1_PID);
+                state->com = std::make_unique<coinbase::crypto::commitment_t>(state->sid, P1_PID_AS_SERVER);
                 std::vector<mem_t> msgs_vec = { state->message_hash };
                 state->com->gen(msgs_vec, state->R1_vec, *state->pi_1);
 
