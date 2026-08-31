@@ -24,3 +24,6 @@ docsgen/
 node_modules/
 cmake_test_discovery_*.json
 build-wasm/
+
+# Harness binaries (mirrors lib/ above; CMake BIN_DIR)
+bin/

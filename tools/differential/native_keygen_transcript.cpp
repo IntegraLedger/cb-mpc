@@ -1,14 +1,27 @@
-// Native 2-party ECDSA keygen transcript recorder (Integra remediation plan 0.5).
+// Native 2-party ECDSA keygen transcript recorder (Integra remediation plan
+// 0.5, structured output added by 0.7).
 //
 // Produces a byte-exact transcript of every protocol message under the
 // deterministic test RNG, so the native and WASM implementations can be
 // compared message-for-message rather than only on their final output.
+//
+// Emits JSON on stdout. Each message carries its FULL SHA-256 and its full
+// bytes, so a consumer can both compare cheaply and localise a divergence to a
+// byte offset.
+//
+// ⛔ 0.7 replaced a field named `sha_prefix` that was not a digest at all: it
+// was hex(bytes).substr(0,32), i.e. the first 16 RAW bytes. On the 36408-byte
+// third message that left 36392 bytes unchecked, so a bisector built on it
+// would have reported "no divergence" for almost any real corruption. The
+// digest below is a real SHA-256 over the whole message.
 //
 // ⚠️ Drives job_2p_t directly with pnames {"server","client"} — deliberately NOT
 // the fork's own wasm_keygen_p1_* entry points, whose DEFAULT_P1_PID is
 // pid_from_name("client") where every real counterparty computes
 // pid_from_name("server"). Those fail at commitment_t::open in round 2. That
 // defect is step 1.1; this harness routes around it so 0.5 does not depend on it.
+
+#include <openssl/sha.h>
 
 #include <cbmpc/crypto/base.h>
 #include <cbmpc/crypto/test_rng.h>
@@ -82,6 +95,13 @@ std::string hex(const std::vector<uint8_t>& v) {
   return s;
 }
 
+// Full SHA-256 over the whole message. See the header note on `sha_prefix`.
+std::string sha256_hex(const std::vector<uint8_t>& v) {
+  std::vector<uint8_t> out(SHA256_DIGEST_LENGTH);
+  SHA256(v.data(), v.size(), out.data());
+  return hex(out);
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -116,18 +136,28 @@ int main(int argc, char** argv) {
 
   if (rv1 || rv2) { fprintf(stderr, "keygen failed: p1=%d p2=%d\n", (int)rv1, (int)rv2); return 1; }
 
-  printf("messages %zu\n", transport->transcript_.size());
-  for (size_t i = 0; i < transport->transcript_.size(); i++) {
-    const auto& m = transport->transcript_[i];
-    printf("msg %02zu p%d->p%d len %zu sha_prefix %s\n", i, m.from + 1, m.to + 1, m.bytes.size(),
-           hex(m.bytes).substr(0, 32).c_str());
-  }
-
   // Public key is the shared output both parties must agree on.
   buf_t q1 = k1.Q.to_compressed_bin(), q2 = k2.Q.to_compressed_bin();
   std::vector<uint8_t> v1(q1.data(), q1.data() + q1.size()), v2(q2.data(), q2.data() + q2.size());
-  printf("Q_p1 %s\n", hex(v1).c_str());
-  printf("Q_p2 %s\n", hex(v2).c_str());
-  printf("Q_agree %s\n", v1 == v2 ? "yes" : "NO");
+
+  // Structured output (0.7). Rounds are NOT emitted here: the transport sees
+  // only sends and has no notion of a protocol step, so inventing one would be
+  // this tool asserting something it cannot observe. The consumer derives
+  // rounds from direction changes -- see internal/transcript in the service
+  // repo, which is also where that model is tested.
+  printf("{\n");
+  printf("  \"protocol\": \"ecdsa2pc.dkg\",\n");
+  printf("  \"seeds\": {\"p1\": \"%02x\", \"p2\": \"%02x\"},\n", b1, b2);
+  printf("  \"messages\": [\n");
+  for (size_t i = 0; i < transport->transcript_.size(); i++) {
+    const auto& m = transport->transcript_[i];
+    printf("    {\"index\": %zu, \"from\": %d, \"to\": %d, \"len\": %zu, \"sha256\": \"%s\", \"hex\": \"%s\"}%s\n",
+           i, m.from + 1, m.to + 1, m.bytes.size(), sha256_hex(m.bytes).c_str(), hex(m.bytes).c_str(),
+           i + 1 == transport->transcript_.size() ? "" : ",");
+  }
+  printf("  ],\n");
+  printf("  \"result\": {\"q_p1\": \"%s\", \"q_p2\": \"%s\", \"q_agree\": %s}\n",
+         hex(v1).c_str(), hex(v2).c_str(), v1 == v2 ? "true" : "false");
+  printf("}\n");
   return v1 == v2 ? 0 : 1;
 }
