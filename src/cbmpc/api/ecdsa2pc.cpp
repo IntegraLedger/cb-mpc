@@ -300,3 +300,35 @@ error_t attach_private_scalar(mem_t scalar_detached_key_blob, mem_t private_scal
 }
 
 }  // namespace coinbase::api::ecdsa_2p
+
+// ---------------------------------------------------------------------------
+// Integra extension — see include/cbmpc/api/integra_ecdsa_2p.h. It lives in this translation unit because
+// it needs the key blob (de)serialization above.
+// ---------------------------------------------------------------------------
+
+#include <cbmpc/api/integra_ecdsa_2p.h>
+
+namespace coinbase::api::ecdsa_2p {
+
+error_t integra_derive_child(mem_t key_blob, mem_t tweak, buf_t& child_key_blob) {
+  if (tweak.size != 32) return coinbase::error(E_BADARG, "tweak must be 32 bytes");
+
+  coinbase::mpc::ecdsa2pc::key_t key;
+  error_t rv = deserialize_key_blob(key_blob, key);
+  if (rv) return rv;
+
+  const coinbase::crypto::mod_t& q = key.curve.order();
+  const coinbase::crypto::bn_t t = coinbase::crypto::bn_t::from_bin(tweak);
+  if (t == 0) return coinbase::error(E_BADARG, "tweak must be non-zero");
+  if (t >= q.value()) return coinbase::error(E_RANGE, "tweak must be less than the curve order");
+
+  coinbase::mpc::ecdsa2pc::key_t child = key;
+  child.Q = key.Q + key.curve.mul_to_generator(t);
+  if (key.role == coinbase::mpc::party_t::p2) {
+    MODULO(q) child.x_share = key.x_share + t;
+  }
+
+  return serialize_key_blob(child, child_key_blob);
+}
+
+}  // namespace coinbase::api::ecdsa_2p

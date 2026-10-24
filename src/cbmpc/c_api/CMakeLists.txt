@@ -6,6 +6,7 @@ target_sources(cbmpc_c_api PRIVATE
   eddsa2pc.cpp
   ecdsa_mp.cpp
   ecdsa2pc.cpp
+  integra_ecdsa2pc.cpp
   pve_base_pke.cpp
   pve_batch_ac.cpp
   pve_batch_single_recipient.cpp
