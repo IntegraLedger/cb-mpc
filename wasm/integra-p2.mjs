@@ -111,7 +111,12 @@ export function keygen(mod, step, start) {
     const rv = mod._integra_dkg_p2(out);
     if (rv !== 0) throw fail(E_DKG, rv, t);
     const keyBlob = takeOutput(mod, out);
-    return { keyBlob, result: t.finish() };
+    try {
+      return { keyBlob, result: t.finish() };
+    } catch (e) {
+      keyBlob.fill(0); // the key never became a wallet; do not leave the share in memory
+      throw e;
+    }
   } finally {
     mod._free(out);
     mod.integraTransport = undefined;
