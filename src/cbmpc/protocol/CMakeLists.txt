@@ -1,6 +1,11 @@
 add_library(cbmpc_protocol OBJECT "")
 
-target_precompile_headers(cbmpc_protocol PUBLIC "${ROOT_DIR}/include-internal/cbmpc/internal/protocol/mpc_job.h")
+if(IS_WASM)
+  # Integra: emcc cannot build CMake's precompiled header; force-include the same header instead.
+  target_compile_options(cbmpc_protocol PUBLIC "SHELL:-include ${ROOT_DIR}/include-internal/cbmpc/internal/protocol/mpc_job.h")
+else()
+  target_precompile_headers(cbmpc_protocol PUBLIC "${ROOT_DIR}/include-internal/cbmpc/internal/protocol/mpc_job.h")
+endif()
 
 target_sources(cbmpc_protocol  PRIVATE
   int_commitment.cpp

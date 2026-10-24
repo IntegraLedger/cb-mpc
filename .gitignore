@@ -26,3 +26,6 @@ node_modules/
 
 # Internal tool outputs for human review
 internal_tools/doc-generator/pdf-diffs/
+
+# Integra: built browser module (wasm/build.sh); the SDK repo carries the released artifact.
+wasm/dist/
