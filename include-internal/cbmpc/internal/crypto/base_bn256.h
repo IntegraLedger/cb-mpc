@@ -15,8 +15,13 @@ inline uint64_t addx(uint64_t x, uint64_t y, uint64_t& carry) {
   carry = _addcarry_u64(uint8_t(carry), x, y, &z);
   return z;
 #else
-#if __has_builtin(__builtin_addcl)
-  return __builtin_addcl(x, y, carry, (unsigned long int*)&carry);
+#if __has_builtin(__builtin_addcll)
+  // Integra: the `ll` builtin. `__builtin_addcl` takes `unsigned long`, which is 32 bits on ILP32 targets
+  // (wasm32), so it truncated every limb there; `unsigned long long` is 64 bits on every target.
+  unsigned long long carry_out;
+  const uint64_t z = __builtin_addcll(x, y, carry, &carry_out);
+  carry = carry_out;
+  return z;
 #else
   auto r = uint128_t(x) + y + carry;
   carry = uint64_t(r >> 64);
@@ -31,8 +36,11 @@ inline uint64_t subx(uint64_t x, uint64_t y, uint64_t& borrow) {
   borrow = _subborrow_u64(uint8_t(borrow), x, y, &z);
   return z;
 #else
-#if __has_builtin(__builtin_subcl)
-  return __builtin_subcl(x, y, borrow, (unsigned long int*)&borrow);
+#if __has_builtin(__builtin_subcll)
+  unsigned long long borrow_out;
+  const uint64_t z = __builtin_subcll(x, y, borrow, &borrow_out);
+  borrow = borrow_out;
+  return z;
 #else
   auto r = uint128_t(x) - y - borrow;
   borrow = uint64_t(r >> 64) & 1;

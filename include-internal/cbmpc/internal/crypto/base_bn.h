@@ -11,6 +11,13 @@
 #error "cb-mpc copied OpenSSL BN internals require OpenSSL 3.6.4"
 #endif
 
+// Integra: the constant-time word helpers (base_mod.cpp addx/subx, the Barrett path) assume 64-bit
+// BN_ULONG words. Upstream gets that from supporting only 64-bit targets; the wasm32 build gets it
+// from an OpenSSL configured SIXTY_FOUR_BIT. Refuse any other word size at compile time.
+#if BN_BYTES != 8
+#error "cb-mpc requires 64-bit bignum words (BN_BYTES == 8)"
+#endif
+
 struct bignum_st {
   BN_ULONG* d; /* Pointer to an array of 'BN_BITS2' bit
                 * chunks. */
