@@ -1,14 +1,26 @@
 #!/bin/bash
 # Build OpenSSL 3.6.4 for WebAssembly (Emscripten) with 64-bit bignum words.
 #
-# Usage: build-static-openssl-wasm.sh <install-prefix>
+# Usage: build-static-openssl-wasm.sh [--threads] <install-prefix>
 #
 # The target is defined in wasm32-bn64.conf next to this script: wasm32 pointers, SIXTY_FOUR_BIT
 # bignum words, so cb-mpc's 64-bit-word assumptions hold in the browser build.
+#
+# The browser module is single-threaded. --threads builds a pthread-enabled OpenSSL for the test suite run
+# under node (wasm/test-suite.sh), whose two-party tests run each party on its own thread.
 set -euo pipefail
 
+THREAD_ARGS=(no-threads)
+MAKE_ARGS=()
+if [ "${1:-}" = "--threads" ]; then
+  # -pthread as a Configure argument reaches the compiler; the browser build passes nothing extra, so its
+  # flags are exactly OpenSSL's defaults.
+  THREAD_ARGS=(threads -pthread)
+  MAKE_ARGS=("CFLAGS=-pthread -O3")
+  shift
+fi
 if [ $# -ne 1 ]; then
-  echo "usage: $0 <install-prefix>" >&2
+  echo "usage: $0 [--threads] <install-prefix>" >&2
   exit 2
 fi
 INSTALL_PREFIX="$1"
@@ -41,7 +53,7 @@ sed -i.bak 's/^static//' crypto/ec/curve25519.c
 
 CC=emcc AR=emar RANLIB=emranlib ./Configure \
   --config="$SCRIPT_DIR/wasm32-bn64.conf" \
-  no-asm no-threads no-shared \
+  no-asm "${THREAD_ARGS[@]}" no-shared \
   no-afalgeng no-apps no-aria no-autoload-config no-bf no-camellia no-cast \
   no-chacha no-cmac no-cms no-crypto-mdebug no-comp no-cmp no-ct no-des \
   no-dh no-dgram no-dsa no-dso no-dtls no-dynamic-engine no-ec2m no-egd \
@@ -59,7 +71,7 @@ if ! grep -q '^# *define SIXTY_FOUR_BIT$' include/openssl/configuration.h; then
   exit 1
 fi
 
-make -j"$(sysctl -n hw.ncpu 2>/dev/null || nproc)" CC=emcc AR=emar RANLIB=emranlib build_libs
+make -j"$(sysctl -n hw.ncpu 2>/dev/null || nproc)" CC=emcc AR=emar RANLIB=emranlib ${MAKE_ARGS[@]+"${MAKE_ARGS[@]}"} build_libs
 make install_sw CC=emcc AR=emar RANLIB=emranlib
 
 echo "OpenSSL 3.6.4 (wasm32-bn64) installed to $INSTALL_PREFIX"
